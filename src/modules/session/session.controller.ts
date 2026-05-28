@@ -211,6 +211,8 @@ export class SessionController {
     ready: number;
     disconnected: number;
     byStatus: Record<string, number>;
+    messagesToday: number;
+    apiCalls24h: number;
     memoryUsage: { heapUsed: number; heapTotal: number; rss: number };
   }> {
     return this.sessionService.getStats();

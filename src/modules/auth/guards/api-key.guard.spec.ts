@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { ApiKeyGuard } from './api-key.guard';
 import { AuthService } from '../auth.service';
 import { ApiKey, ApiKeyRole } from '../entities/api-key.entity';
+import { AuditService } from '../../audit/audit.service';
 
 function createMockApiKey(overrides: Partial<ApiKey> = {}): ApiKey {
   return {
@@ -47,6 +48,7 @@ describe('ApiKeyGuard', () => {
   let guard: ApiKeyGuard;
   let authService: jest.Mocked<Partial<AuthService>>;
   let reflector: jest.Mocked<Reflector>;
+  let auditService: jest.Mocked<Partial<AuditService>>;
 
   beforeEach(() => {
     authService = {
@@ -58,7 +60,11 @@ describe('ApiKeyGuard', () => {
       getAllAndOverride: jest.fn(),
     } as unknown as jest.Mocked<Reflector>;
 
-    guard = new ApiKeyGuard(authService as AuthService, reflector);
+    auditService = {
+      logInfo: jest.fn().mockResolvedValue({} as any),
+    };
+
+    guard = new ApiKeyGuard(authService as AuthService, reflector, auditService as any);
   });
 
   it('should allow access to @Public() routes without API key', async () => {

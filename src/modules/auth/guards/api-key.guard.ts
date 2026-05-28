@@ -1,15 +1,20 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { ApiKeyRole } from '../entities/api-key.entity';
 import { REQUIRED_ROLE_KEY, PUBLIC_KEY } from '../decorators/auth.decorators';
+import { AuditService } from '../../audit/audit.service';
+import { AuditAction } from '../../audit/entities/audit-log.entity';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
+  private readonly logger = new Logger('ApiKeyGuard');
+
   constructor(
     private readonly authService: AuthService,
     private readonly reflector: Reflector,
+    private readonly auditService: AuditService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -33,6 +38,18 @@ export class ApiKeyGuard implements CanActivate {
 
     // Validate API key
     const apiKey = await this.authService.validateApiKey(apiKeyHeader, clientIp, sessionId);
+
+    // Log API usage asynchronously (non-blocking)
+    this.auditService.logInfo(AuditAction.API_KEY_USED, {
+      apiKey,
+      sessionId,
+      ipAddress: clientIp,
+      userAgent: request.headers['user-agent'] as string,
+      method: request.method,
+      path: request.path,
+    }).catch(err => {
+      this.logger.warn(`Failed to log API usage to audit logs: ${err.message}`);
+    });
 
     // Check role permission
     const requiredRole = this.reflector.getAllAndOverride<ApiKeyRole>(REQUIRED_ROLE_KEY, [

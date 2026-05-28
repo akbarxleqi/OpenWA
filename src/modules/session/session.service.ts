@@ -7,7 +7,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { Repository, In, DataSource } from 'typeorm';
+import { Repository, In, DataSource, MoreThanOrEqual } from 'typeorm';
 import { Session, SessionStatus } from './entities/session.entity';
 import { Message, MessageDirection, MessageStatus } from '../message/entities/message.entity';
 import { CreateSessionDto } from './dto';
@@ -17,6 +17,8 @@ import { createLogger } from '../../common/services/logger.service';
 import { EventsGateway } from '../events/events.gateway';
 import { WebhookService } from '../webhook/webhook.service';
 import { HookManager } from '../../core/hooks';
+import { AuditService } from '../audit/audit.service';
+import { AuditAction } from '../audit/entities/audit-log.entity';
 
 interface ReconnectState {
   attempts: number;
@@ -46,6 +48,7 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
     private readonly eventsGateway: EventsGateway,
     private readonly webhookService: WebhookService,
     private readonly hookManager: HookManager,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -647,6 +650,8 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
     ready: number;
     disconnected: number;
     byStatus: Record<string, number>;
+    messagesToday: number;
+    apiCalls24h: number;
     memoryUsage: { heapUsed: number; heapTotal: number; rss: number };
   }> {
     const sessions = await this.findAll();
@@ -656,6 +661,23 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
       byStatus[session.status] = (byStatus[session.status] || 0) + 1;
     }
 
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const messagesToday = await this.messageRepository.count({
+      where: {
+        createdAt: MoreThanOrEqual(todayStart),
+      },
+    });
+
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const { total: apiCalls24h } = await this.auditService.findAll({
+      action: AuditAction.API_KEY_USED,
+      startDate: since24h,
+      endDate: new Date(),
+      limit: 1, // only need total count
+    });
+
     const memory = process.memoryUsage();
 
     return {
@@ -664,6 +686,8 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
       ready: byStatus[SessionStatus.READY] || 0,
       disconnected: byStatus[SessionStatus.DISCONNECTED] || 0,
       byStatus,
+      messagesToday,
+      apiCalls24h,
       memoryUsage: {
         heapUsed: Math.round(memory.heapUsed / 1024 / 1024),
         heapTotal: Math.round(memory.heapTotal / 1024 / 1024),
