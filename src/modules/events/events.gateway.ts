@@ -237,6 +237,20 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   /**
+   * Emit message revoked notification
+   */
+  emitMessageRevoked(sessionId: string, message: Record<string, unknown>) {
+    this.emitToRooms(sessionId, 'message.revoked', message);
+  }
+
+  /**
+   * Emit message reaction notification
+   */
+  emitMessageReaction(sessionId: string, data: Record<string, unknown>) {
+    this.emitToRooms(sessionId, 'message.reaction', data);
+  }
+
+  /**
    * Emit webhook delivery status (broadcast to all - no session context)
    */
   emitWebhookStatus(webhookId: string, success: boolean, error?: string) {

@@ -199,6 +199,8 @@ export interface EngineEventCallbacks {
   onReady?: (phone: string, pushName: string) => void;
   onMessage?: (message: IncomingMessage) => void;
   onMessageAck?: (messageId: string, ack: number) => void;
+  onMessageRevoked?: (message: { id: string; chatId: string; from: string; to: string; body: string; type: string; timestamp: number }) => void;
+  onMessageReaction?: (event: { messageId: string; chatId: string; reaction: string; senderId: string }) => void;
   onDisconnected?: (reason: string) => void;
   onStateChanged?: (state: EngineStatus) => void;
 }
@@ -293,4 +295,7 @@ export interface IWhatsAppEngine {
   getProduct(productId: string): Promise<Product | null>;
   sendProduct(chatId: string, productId: string, body?: string): Promise<MessageResult>;
   sendCatalog(chatId: string, body?: string): Promise<MessageResult>;
+  getChats(): Promise<any[]>;
+  sendSeen(chatId: string): Promise<boolean>;
 }
+

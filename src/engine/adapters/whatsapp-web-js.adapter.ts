@@ -194,6 +194,36 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
       this.callbacks.onMessageAck?.(msg.id._serialized, ack);
     });
 
+    this.client.on('message_revoke_everyone', async (after, before) => {
+      try {
+        const payload = {
+          id: after.id._serialized,
+          chatId: after.from === this.client!.info.wid._serialized ? after.to : after.from,
+          from: after.from,
+          to: after.to,
+          body: '🚫 Pesan ini telah dihapus',
+          type: 'revoked',
+          timestamp: after.timestamp,
+        };
+        this.callbacks.onMessageRevoked?.(payload);
+      } catch (error) {
+        this.logger.error('Error processing message_revoke_everyone', String(error));
+      }
+    });
+
+    this.client.on('message_reaction', (reaction) => {
+      try {
+        this.callbacks.onMessageReaction?.({
+          messageId: reaction.msgId._serialized,
+          chatId: reaction.id.remote,
+          reaction: reaction.reaction,
+          senderId: reaction.senderId,
+        });
+      } catch (error) {
+        this.logger.error('Error processing message_reaction', String(error));
+      }
+    });
+
     this.client.on('disconnected', reason => {
       this.setStatus(EngineStatus.DISCONNECTED);
       this.callbacks.onDisconnected?.(reason);
@@ -913,7 +943,40 @@ export class WhatsAppWebJsAdapter extends EventEmitter implements IWhatsAppEngin
     throw new Error('sendCatalog not yet implemented in whatsapp-web.js adapter');
   }
 
+  async getChats(): Promise<any[]> {
+    this.ensureReady();
+    const chats = await this.client!.getChats();
+    return chats.map(c => ({
+      id: c.id._serialized,
+      name: c.name,
+      isGroup: c.isGroup,
+      unreadCount: c.unreadCount,
+      timestamp: c.timestamp,
+      pinned: c.pinned,
+      lastMessage: c.lastMessage ? {
+        id: c.lastMessage.id._serialized,
+        body: c.lastMessage.body,
+        type: c.lastMessage.type,
+        timestamp: c.lastMessage.timestamp,
+        fromMe: c.lastMessage.fromMe,
+      } : null,
+    }));
+  }
+
+  async sendSeen(chatId: string): Promise<boolean> {
+    this.ensureReady();
+    try {
+      const chat = await this.client!.getChatById(chatId);
+      await chat.sendSeen();
+      return true;
+    } catch (error) {
+      this.logger.error(`Error marking chat ${chatId} as read`, String(error));
+      return false;
+    }
+  }
+
   /* eslint-enable @typescript-eslint/require-await, @typescript-eslint/no-unused-vars */
+
 
   private ensureReady(): void {
     if (this.status !== EngineStatus.READY || !this.client) {

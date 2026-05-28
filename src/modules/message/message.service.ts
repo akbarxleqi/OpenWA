@@ -91,6 +91,13 @@ export class MessageService {
       chatId: dto.chatId,
       body: dto.caption || '',
       type: 'image',
+      metadata: {
+        media: {
+          mimetype: dto.mimetype,
+          filename: dto.filename,
+          data: dto.base64 || dto.url,
+        }
+      }
     });
 
     try {
@@ -122,6 +129,13 @@ export class MessageService {
       chatId: dto.chatId,
       body: dto.caption || '',
       type: 'video',
+      metadata: {
+        media: {
+          mimetype: dto.mimetype,
+          filename: dto.filename,
+          data: dto.base64 || dto.url,
+        }
+      }
     });
 
     try {
@@ -152,6 +166,13 @@ export class MessageService {
     const message = await this.saveOutgoingMessage(sessionId, {
       chatId: dto.chatId,
       type: 'audio',
+      metadata: {
+        media: {
+          mimetype: dto.mimetype,
+          filename: dto.filename,
+          data: dto.base64 || dto.url,
+        }
+      }
     });
 
     try {
@@ -183,6 +204,13 @@ export class MessageService {
       chatId: dto.chatId,
       body: dto.filename || '',
       type: 'document',
+      metadata: {
+        media: {
+          mimetype: dto.mimetype,
+          filename: dto.filename,
+          data: dto.base64 || dto.url,
+        }
+      }
     });
 
     try {
@@ -313,6 +341,13 @@ export class MessageService {
     const message = await this.saveOutgoingMessage(sessionId, {
       chatId: dto.chatId,
       type: 'sticker',
+      metadata: {
+        media: {
+          mimetype: dto.mimetype,
+          filename: dto.filename,
+          data: dto.base64 || dto.url,
+        }
+      }
     });
 
     try {
@@ -341,11 +376,29 @@ export class MessageService {
   ): Promise<MessageResponseDto> {
     const engine = this.getEngine(sessionId);
 
+    let quotedBody = '';
+    try {
+      const quoted = await this.messageRepository.findOne({
+        where: { sessionId, waMessageId: dto.quotedMessageId }
+      });
+      if (quoted) {
+        quotedBody = quoted.body || '';
+      }
+    } catch (e) {
+      // ignore
+    }
+
     // Save message as pending BEFORE sending
     const message = await this.saveOutgoingMessage(sessionId, {
       chatId: dto.chatId,
       body: dto.text,
       type: 'text',
+      metadata: {
+        quotedMessage: {
+          id: dto.quotedMessageId,
+          body: quotedBody,
+        }
+      }
     });
 
     try {
@@ -426,6 +479,7 @@ export class MessageService {
       type: string;
       timestamp?: number;
       status?: MessageStatus;
+      metadata?: Record<string, unknown>;
     },
   ): Promise<Message> {
     const session = await this.sessionService.findOne(sessionId);
@@ -440,6 +494,7 @@ export class MessageService {
       direction: MessageDirection.OUTGOING,
       timestamp: data.timestamp,
       status: data.status ?? MessageStatus.PENDING,
+      metadata: data.metadata,
     });
     return this.messageRepository.save(message);
   }
@@ -464,6 +519,15 @@ export class MessageService {
   ): Promise<void> {
     const engine = this.getEngine(sessionId);
     await engine.deleteMessage(dto.chatId, dto.messageId, dto.forEveryone ?? true);
+
+    try {
+      await this.messageRepository.update(
+        { sessionId, waMessageId: dto.messageId },
+        { body: '🚫 Pesan ini telah dihapus', type: 'revoked' }
+      );
+    } catch (err) {
+      // ignore
+    }
   }
 
   private getEngine(sessionId: string) {

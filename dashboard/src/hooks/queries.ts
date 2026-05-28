@@ -15,6 +15,7 @@ export const queryKeys = {
   sessions: ['sessions'] as const,
   sessionStats: ['sessions', 'stats'] as const,
   sessionGroups: (sessionId: string) => ['sessions', sessionId, 'groups'] as const,
+  sessionChats: (sessionId: string) => ['sessions', sessionId, 'chats'] as const,
   webhooks: ['webhooks'] as const,
   apiKeys: ['apiKeys'] as const,
   logs: (params: { severity?: string; page: number; limit: number }) =>
@@ -51,6 +52,16 @@ export function useSessionGroupsQuery(sessionId: string, enabled: boolean) {
     staleTime: 60_000,
   });
 }
+
+export function useSessionChatsQuery(sessionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.sessionChats(sessionId),
+    queryFn: () => sessionApi.getChats(sessionId),
+    enabled: enabled && !!sessionId,
+    staleTime: 10_000,
+  });
+}
+
 
 export function useCreateSessionMutation() {
   const queryClient = useQueryClient();

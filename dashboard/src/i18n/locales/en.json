@@ -56,6 +56,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "sessions": "Sessions",
+    "chats": "Chats",
     "webhooks": "Webhooks",
     "apiKeys": "API Keys",
     "messageTester": "Message Tester",

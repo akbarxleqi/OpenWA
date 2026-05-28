@@ -9,6 +9,7 @@ import {
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, In, DataSource } from 'typeorm';
 import { Session, SessionStatus } from './entities/session.entity';
+import { Message, MessageDirection, MessageStatus } from '../message/entities/message.entity';
 import { CreateSessionDto } from './dto';
 import { EngineFactory } from '../../engine/engine.factory';
 import { IWhatsAppEngine, EngineStatus } from '../../engine/interfaces/whatsapp-engine.interface';
@@ -37,6 +38,8 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
   constructor(
     @InjectRepository(Session, 'data')
     private readonly sessionRepository: Repository<Session>,
+    @InjectRepository(Message, 'data')
+    private readonly messageRepository: Repository<Message>,
     @InjectDataSource('data')
     private readonly dataSource: DataSource,
     private readonly engineFactory: EngineFactory,
@@ -306,11 +309,133 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
               return;
             }
 
+            const incoming = finalMessage as any;
+            const metadata: Record<string, any> = {};
+            if (incoming.media) {
+              metadata.media = incoming.media;
+            }
+            if (incoming.quotedMessage) {
+              metadata.quotedMessage = incoming.quotedMessage;
+            }
+
+            const dbMessage = this.messageRepository.create({
+              sessionId: id,
+              waMessageId: incoming.id,
+              chatId: incoming.chatId,
+              from: incoming.from,
+              to: incoming.to,
+              body: incoming.body,
+              type: incoming.type,
+              direction: incoming.fromMe ? MessageDirection.OUTGOING : MessageDirection.INCOMING,
+              timestamp: incoming.timestamp,
+              status: MessageStatus.SENT,
+              metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+            });
+
+            void this.messageRepository.save(dbMessage).catch(err => {
+              this.logger.error(`Failed to save incoming message ${incoming.id} to database`, String(err));
+            });
+
             // Dispatch to webhooks with potentially modified message
             void this.webhookService.dispatch(id, 'message.received', finalMessage as Record<string, unknown>);
             // Emit real-time event to WebSocket clients
             this.eventsGateway.emitMessage(id, finalMessage as Record<string, unknown>);
           });
+      },
+      onMessageAck: (messageId, ack): void => {
+        this.logger.debug(`Message ACK received: ${messageId} -> ${ack}`, {
+          sessionId: id,
+          messageId,
+          ack,
+          action: 'message_ack_received',
+        });
+
+        const ackNames: Record<number, string> = {
+          [-1]: 'FAILED',
+          [0]: 'PENDING',
+          [1]: 'SENT',
+          [2]: 'DELIVERED',
+          [3]: 'READ',
+          [4]: 'PLAYED',
+        };
+        const ackName = ackNames[ack] || 'UNKNOWN';
+
+        const statusMap: Record<number, MessageStatus> = {
+          [-1]: MessageStatus.FAILED,
+          [0]: MessageStatus.PENDING,
+          [1]: MessageStatus.SENT,
+          [2]: MessageStatus.DELIVERED,
+          [3]: MessageStatus.READ,
+          [4]: MessageStatus.READ,
+        };
+        const status = statusMap[ack];
+        
+        if (status) {
+          void this.messageRepository.update(
+            { sessionId: id, waMessageId: messageId },
+            { status }
+          ).then(async () => {
+            const updatedMsg = await this.messageRepository.findOne({
+              where: { sessionId: id, waMessageId: messageId }
+            });
+            this.eventsGateway.emitMessageAck(id, {
+              messageId,
+              ack,
+              ackName,
+              chatId: updatedMsg?.chatId,
+            } as any);
+          }).catch(err => {
+            this.logger.error(`Failed to update message ACK status: ${messageId}`, String(err));
+          });
+        }
+      },
+      onMessageRevoked: (message): void => {
+        this.logger.debug(`Message revoked: ${message.id}`, {
+          sessionId: id,
+          messageId: message.id,
+          action: 'message_revoked',
+        });
+
+        void this.messageRepository.update(
+          { sessionId: id, waMessageId: message.id },
+          { body: message.body, type: message.type }
+        ).then(() => {
+          this.eventsGateway.emitMessageRevoked(id, message);
+        }).catch(err => {
+          this.logger.error(`Failed to update revoked message: ${message.id}`, String(err));
+        });
+      },
+      onMessageReaction: (event): void => {
+        this.logger.debug(`Message reaction received: ${event.messageId} -> ${event.reaction}`, {
+          sessionId: id,
+          messageId: event.messageId,
+          action: 'message_reaction_received',
+        });
+
+        void this.messageRepository.findOne({
+          where: { sessionId: id, waMessageId: event.messageId }
+        }).then(async (msg) => {
+          if (!msg) return;
+          const metadata = msg.metadata || {};
+          const reactions = metadata.reactions as Record<string, string> || {};
+          
+          if (!event.reaction) {
+            delete reactions[event.senderId];
+          } else {
+            reactions[event.senderId] = event.reaction;
+          }
+          
+          metadata.reactions = reactions;
+          msg.metadata = metadata;
+          await this.messageRepository.save(msg);
+
+          this.eventsGateway.emitMessageReaction(id, {
+            ...event,
+            reactions,
+          });
+        }).catch(err => {
+          this.logger.error(`Failed to update message reaction: ${event.messageId}`, String(err));
+        });
       },
       onDisconnected: (reason: string): void => {
         this.logger.warn(`Session disconnected: ${reason}`, {
@@ -478,6 +603,29 @@ export class SessionService implements OnModuleDestroy, OnModuleInit {
       name: g.name,
     }));
   }
+
+  async getChats(id: string): Promise<any[]> {
+    await this.findOne(id); // Verify session exists
+    const engine = this.engines.get(id);
+
+    if (!engine) {
+      throw new BadRequestException('Session is not started');
+    }
+
+    return engine.getChats();
+  }
+
+  async sendSeen(id: string, chatId: string): Promise<boolean> {
+    await this.findOne(id); // Verify session exists
+    const engine = this.engines.get(id);
+
+    if (!engine) {
+      throw new BadRequestException('Session is not started');
+    }
+
+    return engine.sendSeen(chatId);
+  }
+
 
   private async updateStatus(id: string, status: SessionStatus): Promise<void> {
     await this.sessionRepository.update(id, { status });

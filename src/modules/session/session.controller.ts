@@ -166,6 +166,37 @@ export class SessionController {
     return this.sessionService.getGroups(id);
   }
 
+  @Get(':id/chats')
+  @ApiOperation({ summary: 'Get active chats for a session' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of active chats',
+  })
+  @ApiResponse({ status: 400, description: 'Session not ready' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async getChats(@Param('id') id: string): Promise<any[]> {
+    return this.sessionService.getChats(id);
+  }
+
+  @Post(':id/chats/read')
+  @ApiOperation({ summary: 'Mark chat as read/seen' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Chat marked as read successfully',
+  })
+  @ApiResponse({ status: 400, description: 'Session not ready' })
+  @ApiResponse({ status: 404, description: 'Session not found' })
+  async sendSeen(
+    @Param('id') id: string,
+    @Body() dto: { chatId: string },
+  ): Promise<{ success: boolean }> {
+    const success = await this.sessionService.sendSeen(id, dto.chatId);
+    return { success };
+  }
+
+
   @Get('stats/overview')
   @ApiOperation({
     summary: 'Get session statistics for multi-session monitoring',

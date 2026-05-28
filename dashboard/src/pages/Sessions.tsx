@@ -26,7 +26,7 @@ export function Sessions() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  useWebSocket({
+  const { subscribe, unsubscribe } = useWebSocket({
     onSessionStatus: useCallback(
       (event: { sessionId: string; status: string }) => {
         setSessions(prev =>
@@ -58,6 +58,14 @@ export function Sessions() {
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    subscribe('*', ['session.status']);
+    return () => {
+      unsubscribe('*');
+    };
+  }, [subscribe, unsubscribe]);
+
 
   const qrRefreshInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentSessionName = useRef<string>('');

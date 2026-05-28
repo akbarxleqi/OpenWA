@@ -18,6 +18,25 @@ export interface Session {
   updatedAt: string;
 }
 
+export interface ChatLastMessage {
+  id: string;
+  body: string;
+  type: string;
+  timestamp: number;
+  fromMe: boolean;
+}
+
+export interface Chat {
+  id: string;
+  name: string;
+  isGroup: boolean;
+  unreadCount: number;
+  timestamp: number;
+  pinned: boolean;
+  lastMessage: ChatLastMessage | null;
+}
+
+
 export interface SessionStats {
   total: number;
   active: number;
@@ -189,6 +208,7 @@ export const sessionApi = {
   getQR: (id: string) => request<{ qrCode: string; status: string }>(`/sessions/${id}/qr`),
   getStats: () => request<SessionStats>('/sessions/stats/overview'),
   getGroups: (id: string) => request<{ id: string; name: string }[]>(`/sessions/${id}/groups`),
+  getChats: (id: string) => request<Chat[]>(`/sessions/${id}/chats`),
 };
 
 // =============================================================================
@@ -289,6 +309,31 @@ export const messageApi = {
     request<MessageResponse>(`/sessions/${sessionId}/messages/send-document`, {
       method: 'POST',
       body: JSON.stringify({ chatId, url, filename }),
+    }),
+  sendMedia: (
+    sessionId: string,
+    chatId: string,
+    type: 'image' | 'video' | 'audio' | 'document',
+    data: { url?: string; base64?: string; mimetype?: string; filename?: string; caption?: string }
+  ) =>
+    request<MessageResponse>(`/sessions/${sessionId}/messages/send-${type}`, {
+      method: 'POST',
+      body: JSON.stringify({ chatId, ...data }),
+    }),
+  reply: (sessionId: string, data: { chatId: string; quotedMessageId: string; text: string }) =>
+    request<MessageResponse>(`/sessions/${sessionId}/messages/reply`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  react: (sessionId: string, data: { chatId: string; messageId: string; emoji: string }) =>
+    request<void>(`/sessions/${sessionId}/messages/react`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  delete: (sessionId: string, data: { chatId: string; messageId: string; forEveryone?: boolean }) =>
+    request<void>(`/sessions/${sessionId}/messages/delete`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 };
 

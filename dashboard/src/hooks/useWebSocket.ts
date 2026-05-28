@@ -19,10 +19,43 @@ interface MessageEvent {
   timestamp: string;
 }
 
+interface MessageAckEvent {
+  sessionId: string;
+  messageId: string;
+  ack: number;
+  ackName: string;
+  chatId?: string;
+  timestamp: string;
+}
+
+interface MessageReactionEvent {
+  sessionId: string;
+  messageId: string;
+  chatId: string;
+  reaction: string;
+  senderId: string;
+  reactions: Record<string, string>;
+  timestamp: string;
+}
+
+interface MessageRevokedEvent {
+  sessionId: string;
+  id: string;
+  chatId: string;
+  from: string;
+  to: string;
+  body: string;
+  type: string;
+  timestamp: number;
+}
+
 interface WebSocketEvents {
   onSessionStatus?: (event: SessionStatusEvent) => void;
   onQRCode?: (event: QRCodeEvent) => void;
   onMessage?: (event: MessageEvent) => void;
+  onMessageAck?: (event: MessageAckEvent) => void;
+  onMessageReaction?: (event: MessageReactionEvent) => void;
+  onMessageRevoked?: (event: MessageRevokedEvent) => void;
 }
 
 // Use current origin for WebSocket (goes through nginx proxy in Docker)
@@ -75,6 +108,25 @@ export function useWebSocket(events: WebSocketEvents = {}) {
     });
   }, []);
 
+  const subscribe = useCallback((sessionId: string, eventsList: string[]) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('message', {
+        type: 'subscribe',
+        sessionId,
+        events: eventsList,
+      });
+    }
+  }, []);
+
+  const unsubscribe = useCallback((sessionId: string) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('message', {
+        type: 'unsubscribe',
+        sessionId,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     connect();
 
@@ -92,24 +144,56 @@ export function useWebSocket(events: WebSocketEvents = {}) {
 
     const socket = socketRef.current;
 
-    if (events.onSessionStatus) {
-      socket.on('session:status', events.onSessionStatus);
-    }
+    const handleIncomingMessage = (msg: any) => {
+      if (msg && msg.type === 'event' && msg.payload) {
+        const { event, sessionId, data } = msg.payload;
+        if (event === 'session.status' && events.onSessionStatus) {
+          events.onSessionStatus({ sessionId, status: data.status, timestamp: msg.timestamp });
+        } else if (event === 'session.qr' && events.onQRCode) {
+          events.onQRCode({ sessionId, qrCode: data.qrCode, timestamp: msg.timestamp });
+        } else if ((event === 'message.received' || event === 'message.sent') && events.onMessage) {
+          events.onMessage({ sessionId, message: data, timestamp: msg.timestamp });
+        } else if (event === 'message.ack' && events.onMessageAck) {
+          events.onMessageAck({
+            sessionId,
+            messageId: data.messageId,
+            ack: data.ack,
+            ackName: data.ackName,
+            chatId: data.chatId,
+            timestamp: msg.timestamp,
+          });
+        } else if (event === 'message.reaction' && events.onMessageReaction) {
+          events.onMessageReaction({
+            sessionId,
+            messageId: data.messageId,
+            chatId: data.chatId,
+            reaction: data.reaction,
+            senderId: data.senderId,
+            reactions: data.reactions,
+            timestamp: msg.timestamp,
+          });
+        } else if (event === 'message.revoked' && events.onMessageRevoked) {
+          events.onMessageRevoked({
+            sessionId,
+            id: data.id,
+            chatId: data.chatId,
+            from: data.from,
+            to: data.to,
+            body: data.body,
+            type: data.type,
+            timestamp: data.timestamp,
+          });
+        }
+      }
+    };
 
-    if (events.onQRCode) {
-      socket.on('session:qr', events.onQRCode);
-    }
-
-    if (events.onMessage) {
-      socket.on('session:message', events.onMessage);
-    }
+    socket.on('message', handleIncomingMessage);
 
     return () => {
-      socket.off('session:status');
-      socket.off('session:qr');
-      socket.off('session:message');
+      socket.off('message', handleIncomingMessage);
     };
-  }, [events.onSessionStatus, events.onQRCode, events.onMessage]);
+  }, [events]);
 
-  return { isConnected };
+  return { isConnected, subscribe, unsubscribe };
 }
+
