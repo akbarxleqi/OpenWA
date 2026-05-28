@@ -194,7 +194,7 @@
   flex-wrap: wrap;
 }
 
-.btn-action {
+.card-actions .btn-action {
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -207,18 +207,20 @@
   background: var(--bg-light);
   border: 1px solid var(--border);
   color: var(--text-secondary);
+  width: auto;
+  height: auto;
 }
 
-.btn-action:hover {
+.card-actions .btn-action:hover {
   background: var(--bg-white);
   color: var(--text-primary);
 }
 
-.btn-action.danger {
+.card-actions .btn-action.danger {
   color: #dc2626;
 }
 
-.btn-action.danger:hover {
+.card-actions .btn-action.danger:hover {
   background: #fee2e2;
   border-color: #fecaca;
 }
